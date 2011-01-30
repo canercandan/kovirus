@@ -1,0 +1,22 @@
+StdOutx proto :BYTE
+
+mov edi, 10
+
+.while (edi>0)
+invoke StdOut, addr HelloWorld
+invoke StdOutx, edi
+sub edi, 1
+.endw
+
+StdOutx proc inchar:BYTE
+
+    LOCAL hOutPut  :DWORD
+    LOCAL bWritten :DWORD
+       
+    invoke GetStdHandle,STD_OUTPUT_HANDLE
+    mov hOutPut, eax
+    invoke WriteFile,hOutPut,addr inchar,1,ADDR bWritten,NULL
+    mov eax, bWritten
+    ret
+
+StdOutx endp

